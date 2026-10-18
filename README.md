@@ -75,7 +75,8 @@ Measured results are recorded in [`eval/results-log.md`](eval/results-log.md).
 - n8n and the chat app listen on `127.0.0.1` only. The webhooks require an `X-Brightpan-Key` header that only the chat app's server route and the eval harness hold.
 - The chat route only accepts same-origin JSON. It maps the browser's session id to a keyed hash before it reaches n8n, so a session id seen in logs can't be used to continue someone else's conversation.
 - Order details are returned only when the order number and email match. A wrong email and an unknown order get the same reply, so the agent never confirms that an order exists.
-- Hand-offs record whether the customer's email matched the order. Slack messages escape customer text so it can't create mentions or links.
+- Failed lookups are capped: after 3 non-matching lookups in a conversation (15 minutes), or 5 for the same order number across conversations (1 hour), further lookups are refused. The chat route also limits each client to 30 messages per 5 minutes.
+- Hand-offs record whether the customer's email matched the order. Slack alerts use Block Kit: the customer's email and summary are sent as plain text, so they can't create mentions, links or fake verification lines.
 - The workflows that handle the Shopify access token store no execution data in n8n.
 
 ## Known limits and deviations from the spec
@@ -85,4 +86,5 @@ Measured results are recorded in [`eval/results-log.md`](eval/results-log.md).
 - **Chat app.** The spec asked for a single HTML page; this is a Next.js + shadcn/ui app instead, at the owner's request.
 - **Grading is literal.** A correct answer worded differently from the test set (for example "wash by hand" for "hand wash") fails the automatic check. The manual verdict in the results CSV is final.
 - **Memory.** Conversation memory is kept in n8n's process memory (last 10 messages per session) and is lost when n8n restarts.
-- **Local only.** This is a local demo: there is no user login, rate limiting or production hosting.
+- **Local only.** This is a local demo: there is no user login or production hosting. The rate limit and lookup counters live in process memory and n8n's workflow data, not a shared store.
+- **Lookup limit and the eval.** Each eval run sends one deliberately wrong email for order 1002 (Q31). After five runs within an hour, order 1002 is locked and Q20 fails until the hour passes.

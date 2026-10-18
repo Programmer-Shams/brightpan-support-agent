@@ -179,7 +179,8 @@
           "mappingMode": "defineBelow",
           "value": {
             "order_number": "={{ $fromAI('order_number', \"The order number the customer gave, digits only\", 'string') }}",
-            "email": "={{ $fromAI('email', \"The email address the customer gave\", 'string') }}"
+            "email": "={{ $fromAI('email', \"The email address the customer gave\", 'string') }}",
+            "session_id": "={{ $('Prepare').first().json.session_id }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -196,6 +197,16 @@
             {
               "id": "email",
               "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
               "required": false,
               "defaultMatch": false,
               "display": true,

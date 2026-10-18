@@ -179,8 +179,9 @@ def tool_escalate(slack: bool):
     names = ["When called by agent", "Parse input", "Shopify token", "Find order", "Verify customer", "Save handoff"]
     if slack:
         nodes.append(http("Notify Slack", [1320, 0], "__SLACK_WEBHOOK_URL__",
-                          "={{ JSON.stringify({ text: ':rotating_light: *New Brightpan handoff #' + $json.id + '* — ' "
-                          "+ $('Verify customer').first().json.slack_body }) }}",
+                          "={{ JSON.stringify({ text: 'New Brightpan handoff #' + $json.id, blocks: [{ type: 'section', "
+                          "text: { type: 'mrkdwn', text: ':rotating_light: *New Brightpan handoff #' + $json.id + '* — ' "
+                          "+ $('Verify customer').first().json.slack_title } }].concat($('Verify customer').first().json.slack_blocks) }) }}",
                           retry=False, onError="continueRegularOutput"))
         names.append("Notify Slack")
     nodes.append(code("Confirm", js("escalate_confirm"), [1540, 0]))
@@ -204,6 +205,7 @@ TOOL_DEFS = {
                        "Returns details only when both match; otherwise returns NO_MATCH.",
         "inputs": {"order_number": ("string", "The order number the customer gave, digits only"),
                    "email": ("string", "The email address the customer gave")},
+        "fixed": {"session_id": "={{ $('Prepare').first().json.session_id }}"},
     },
     "escalate_to_human": {
         "wf": "__WF_ESCALATE__",

@@ -12,6 +12,18 @@ const MAX_MESSAGE = 4000;
 
 export const maxDuration = 120;
 
+// Simple in-memory rate limit per client address (single-process demo server; use a shared store in production).
+const RATE = { max: 30, windowMs: 5 * 60 * 1000 };
+const hits = new Map<string, number[]>();
+function rateLimited(request: Request): boolean {
+  const client = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
+  const now = Date.now();
+  const recent = (hits.get(client) ?? []).filter((t) => now - t < RATE.windowMs);
+  recent.push(now);
+  hits.set(client, recent);
+  return recent.length > RATE.max;
+}
+
 const fail = (status: number, error: string) => Response.json({ error }, { status });
 
 /** Only same-origin JSON requests: blocks other websites from posting through the proxy. */
@@ -39,6 +51,7 @@ export async function POST(request: Request) {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return fail(415, "Send the message as JSON.");
   }
+  if (rateLimited(request)) return fail(429, "Too many messages in a short time. Wait a few minutes, then try again.");
 
   let body: { message?: unknown; session_id?: unknown; model?: unknown };
   try {

@@ -12,23 +12,30 @@ const REASONS = {
 };
 const reason = Object.prototype.hasOwnProperty.call(REASONS, p.reason) ? p.reason : 'other';
 const summary = String(p.summary == null ? '' : p.summary).trim().slice(0, 1000);
-// Slack mrkdwn: escape &, <, > so customer text can't create mentions or links.
-const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const slack_body =
-  `*${REASONS[reason]}*\n` +
-  `*Customer:* ${p.email ? esc(p.email) : 'not given'} | *Order:* ${p.order_number ? '#' + p.order_number : 'not given'} | ` +
-  (verified ? ':white_check_mark: email matches order' : ':warning: not verified against an order') +
-  `\n*Summary:* ${esc(summary || '(none)')}`;
+const email = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(p.email || '') ? p.email : null;
+
+// Slack Block Kit: system-generated lines are mrkdwn; everything the customer or model supplied goes in
+// plain_text (never formatted) with newlines collapsed, so it can't imitate the header or verification line.
+const plain = (text, max) => ({ type: 'plain_text', text: String(text).replace(/\s+/g, ' ').trim().slice(0, max) || '-', emoji: false });
+const slack_blocks = [
+  { type: 'section', fields: [
+    plain('Customer: ' + (email || (p.email ? 'invalid email given' : 'not given')), 150),
+    plain('Order: ' + (p.order_number ? '#' + p.order_number : 'not given'), 60),
+    plain(verified ? 'Email check: matches the order' : 'Email check: NOT verified against an order', 60),
+  ] },
+  { type: 'section', text: plain('Summary: ' + (summary || '(none)'), 1100) },
+];
 
 return [{
   json: {
     row: {
       session_id: p.session_id ? String(p.session_id).slice(0, 200) : null,
       reason, summary: summary || '(none)',
-      customer_email: p.email || null,
+      customer_email: email,
       order_number: p.order_number || null,
       verified,
     },
-    slack_body,
+    slack_title: REASONS[reason],
+    slack_blocks,
   },
 }];
