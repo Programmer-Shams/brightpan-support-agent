@@ -113,7 +113,7 @@ export function SupportChat() {
           <div className="flex items-center gap-3">
             <BrandMark className="h-7 w-11 text-enamel" />
             <div className="leading-none">
-              <p className="type-stamp text-xl font-extrabold tracking-tight">Brightpan</p>
+              <p className="type-display text-2xl">Brightpan</p>
               <p className="mt-1 hidden text-xs text-muted-foreground sm:block">Kitchen Supply customer support</p>
             </div>
           </div>
@@ -216,7 +216,7 @@ export function SupportChat() {
 function EmptyState({ onPick, model }: { onPick: (q: string) => void; model: ModelKey }) {
   return (
     <div className="pt-6 sm:pt-14">
-      <h1 className="type-stamp text-4xl leading-[1.05] font-extrabold tracking-tight sm:text-5xl">
+      <h1 className="type-display text-4xl leading-[1.08] sm:text-[3.4rem]">
         How can we help
         <br />
         in the kitchen today?

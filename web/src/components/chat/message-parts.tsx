@@ -115,7 +115,7 @@ export function OrderCard({ order }: { order: Order }) {
           <span className="text-sm font-semibold">Order {order.number}</span>
           <span className="text-xs whitespace-nowrap text-verified">Email verified</span>
         </span>
-        <span className="type-semi text-sm font-semibold text-foreground">{status}</span>
+        <span className="text-sm font-semibold text-foreground">{status}</span>
       </header>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 px-4 py-3 text-sm sm:grid-cols-3">
         {facts

@@ -41,7 +41,7 @@ export function TracePanel({ messages, className }: { messages: ChatMessage[]; c
   return (
     <div className={cn("flex flex-col gap-5", className)}>
       <div>
-        <h2 className="type-semi text-base font-semibold">How each answer was made</h2>
+        <h2 className="type-display text-lg">How each answer was made</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Every reply comes from a help center article, a verified order or a hand-off to a person.
         </p>

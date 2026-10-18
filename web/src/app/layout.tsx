@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { Archivo } from "next/font/google";
+import { Archivo, Outfit } from "next/font/google";
 import "./globals.css";
 
 const archivo = Archivo({
   variable: "--font-archivo",
   subsets: ["latin"],
-  axes: ["wdth"],
+});
+
+// Display face for the wordmark and headings: geometric, soft and round.
+const outfit = Outfit({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -15,7 +21,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${archivo.variable} h-full antialiased`}>
+    <html lang="en" className={`${archivo.variable} ${outfit.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {children}
       </body>

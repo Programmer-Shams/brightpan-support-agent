@@ -10,7 +10,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-archivo);
-  --font-heading: var(--font-archivo);
+  --font-heading: var(--font-display);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -87,13 +87,11 @@
   }
 }
 
-/* Archivo's width axis: expanded for the maker's-mark headings, normal for reading. */
-.type-stamp {
-  font-variation-settings: "wdth" 125;
-  letter-spacing: -0.01em;
-}
-.type-semi {
-  font-variation-settings: "wdth" 112;
+/* Outfit for the wordmark and headings; Archivo for everything you read. */
+.type-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 @media (prefers-reduced-motion: reduce) {
