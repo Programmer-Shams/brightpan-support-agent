@@ -1,0 +1,15 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local runtime
+n8n/.n8n-data/
+*.log
+.DS_Store
+n8n/.deploy-state.json

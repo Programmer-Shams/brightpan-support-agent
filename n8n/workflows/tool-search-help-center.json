@@ -1,0 +1,133 @@
+{
+  "name": "Brightpan tool: search_help_center",
+  "nodes": [
+    {
+      "id": "68b6d418-c191-5563-846e-f648ba1558ef",
+      "name": "When called by agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "e36c6951-e855-503e-8cc6-ac3e0d23efed",
+      "name": "Embed query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: String($json.query || '').slice(0, 2000) }) }}",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi"
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "__CRED_OPENAI__",
+          "name": "Brightpan OpenAI"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "ea43821d-bc38-5f47-8718-5f2ffa03add9",
+      "name": "Match articles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "__SUPABASE_URL__/rest/v1/rpc/match_kb_chunks",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query_embedding: $json.data[0].embedding, match_count: 4 }) }}",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "__CRED_SUPABASE__",
+          "name": "Brightpan Supabase"
+        }
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "99c0b3eb-e40a-5078-b163-e680d53d6800",
+      "name": "Format results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// search_help_center result: text for the model plus structured article ids for logging.\nconst rows = $input.all().map(i => i.json).filter(r => r.article_id);\nif (!rows.length) {\n  return [{ json: { response: 'NO_RESULTS: The help center has no article about this.', articles: [] } }];\n}\nconst text = rows.map(r => `[${r.article_id}] ${r.title}\\n${r.content}`).join('\\n\\n---\\n\\n');\nreturn [{\n  json: {\n    response: 'Help center results. Cite the exact title of any article you use; ' +\n      \"if none of them answers the question, say you don't have that information and cite nothing.\\n\\n\" + text,\n    articles: rows.map(r => ({ id: r.article_id, title: r.title, similarity: Number(Number(r.similarity).toFixed(3)) })),\n  },\n}];"
+      }
+    }
+  ],
+  "connections": {
+    "When called by agent": {
+      "main": [
+        [
+          {
+            "node": "Embed query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed query": {
+      "main": [
+        [
+          {
+            "node": "Match articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match articles": {
+      "main": [
+        [
+          {
+            "node": "Format results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  }
+}

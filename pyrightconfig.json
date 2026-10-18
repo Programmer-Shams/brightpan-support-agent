@@ -1,0 +1,5 @@
+{
+  "extraPaths": ["scripts", "n8n", "eval"],
+  "venvPath": ".",
+  "venv": ".venv"
+}

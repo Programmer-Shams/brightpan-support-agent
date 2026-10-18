@@ -1,0 +1,166 @@
+{
+  "name": "Brightpan tool: lookup_order",
+  "nodes": [
+    {
+      "id": "68b6d418-c191-5563-846e-f648ba1558ef",
+      "name": "When called by agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "89fe0c7f-a4c8-5a81-ae3b-0c9dfb0052c5",
+      "name": "Parse input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Normalize the order number and email the model passed in (shared by lookup_order and escalate_to_human).\n// Digits only for the order number, so nothing else can reach the Shopify search query.\nconst raw = $input.first().json;\nconst clean = v => String(v == null ? '' : v).trim();\nconst order_number = clean(raw.order_number).replace(/\\D/g, '').slice(0, 12);\nconst emailField = raw.email !== undefined ? raw.email : raw.customer_email;\nconst email = clean(emailField).replace(/[.,;:!?)\\]]+$/, '').toLowerCase().slice(0, 254);\nreturn [{ json: { ...raw, order_number, email } }];"
+      }
+    },
+    {
+      "id": "f9f8b7b1-d35f-5b09-b3b5-66593ba9fc6a",
+      "name": "Shopify token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://__SHOPIFY_SHOP__.myshopify.com/admin/oauth/access_token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "__CRED_SHOPIFY__",
+          "name": "Brightpan Shopify client"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "b6d2d28d-8f9e-50be-8b4d-b736ac1ce9cd",
+      "name": "Find order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://__SHOPIFY_SHOP__.myshopify.com/admin/api/2026-10/graphql.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: \"query($q: String!) { orders(first: 5, query: $q) { nodes { name email processedAt cancelledAt displayFinancialStatus displayFulfillmentStatus totalPriceSet { shopMoney { amount currencyCode } } totalShippingPriceSet { shopMoney { amount currencyCode } } customAttributes { key value } lineItems(first: 20) { nodes { title quantity customAttributes { key value } originalUnitPriceSet { shopMoney { amount currencyCode } } } } } } }\", variables: { q: 'name:#' + ($('Parse input').first().json.order_number || '0') } }) }}",
+        "options": {
+          "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "={{ $json.access_token }}"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "94f5498f-7dbb-5615-a1f8-9ddf8fb52a92",
+      "name": "Check email and format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// lookup_order result. Order details are returned ONLY when the order number AND email match;\n// an unknown order and a wrong email get the identical NO_MATCH reply (no enumeration).\nconst { order_number, email } = $('Parse input').first().json;\nif (!order_number || !email) {\n  return [{ json: {\n    response: 'MISSING_INPUT: Ask the customer for both the order number and the email used at checkout.',\n    result: 'missing_input', order: null,\n  } }];\n}\nconst res = $input.first().json;\nif (res.errors) throw new Error('Shopify error: ' + JSON.stringify(res.errors).slice(0, 300));\nconst o = ((res.data && res.data.orders && res.data.orders.nodes) || []).find(n => n.name === '#' + order_number);\nif (!o || String(o.email || '').toLowerCase() !== email) {\n  return [{ json: {\n    response: 'NO_MATCH: No order matches that order number and email address. ' +\n      'Do not share any order details. Ask the customer to double-check both.',\n    result: 'no_match', order: null,\n  } }];\n}\n\nconst attr = Object.fromEntries((o.customAttributes || []).map(a => [a.key, a.value]));\nconst money = m => `$${Number(m.amount).toFixed(2)}`;\nconst order = {\n  number: o.name,\n  placed: o.processedAt.slice(0, 10),\n  status: attr.fulfillment_status || String(o.displayFulfillmentStatus).toLowerCase(),\n  cancelled: Boolean(o.cancelledAt),\n  payment: o.displayFinancialStatus,\n  ship_to: attr.ship_to || null,\n  carrier: attr.carrier || null,\n  tracking: attr.tracking_number || null,\n  shipped: attr.shipped_date || null,\n  delivered: attr.delivered_date || null,\n  shipping: money(o.totalShippingPriceSet.shopMoney),\n  total: money(o.totalPriceSet.shopMoney),\n  currency: o.totalPriceSet.shopMoney.currencyCode,\n  note: attr.note || null,\n  items: o.lineItems.nodes.map(li => {\n    const props = Object.fromEntries((li.customAttributes || []).map(a => [a.key, a.value]));\n    return {\n      qty: li.quantity,\n      title: li.title,\n      price: money(li.originalUnitPriceSet.shopMoney),\n      status: props.status || null,\n      final_sale: props.final_sale === 'true',\n    };\n  }),\n};\n\nconst lines = [\n  `MATCH: Order ${order.number} (email verified)`,\n  `Placed: ${order.placed}`,\n  `Status: ${order.status}${order.cancelled ? ' (order cancelled)' : ''}`,\n  `Payment: ${order.payment}`,\n  `Ship to: ${order.ship_to || 'unknown'}`,\n  `Carrier: ${order.carrier || 'not assigned yet'}`,\n  `Tracking number: ${order.tracking || 'none yet'}`,\n  `Shipped: ${order.shipped || 'not shipped yet'}`,\n  `Delivered: ${order.delivered || 'not delivered yet'}`,\n  `Shipping charged: ${order.shipping} ${order.currency}`,\n  `Order total: ${order.total} ${order.currency}`,\n  'Items:',\n  ...order.items.map(i => `- ${i.qty} x ${i.title} (${i.price} ${order.currency})` +\n    (i.status ? ` — item status: ${i.status}` : '') + (i.final_sale ? ' — final sale' : '')),\n];\nif (order.note) lines.push(`Note: ${order.note}`);\nreturn [{ json: { response: lines.join('\\n'), result: 'match', order } }];"
+      }
+    }
+  ],
+  "connections": {
+    "When called by agent": {
+      "main": [
+        [
+          {
+            "node": "Parse input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse input": {
+      "main": [
+        [
+          {
+            "node": "Shopify token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify token": {
+      "main": [
+        [
+          {
+            "node": "Find order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find order": {
+      "main": [
+        [
+          {
+            "node": "Check email and format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  }
+}
