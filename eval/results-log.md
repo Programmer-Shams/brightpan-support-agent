@@ -61,3 +61,45 @@ Every run of `eval/run_eval.py --log` against the real n8n workflow is appended 
 - Request errors: 0/40
 - Latency median: 7.74 s | p90 (nearest-rank): 9.34 s
 - Manual review: pending
+
+## Run 20261018T145822Z — claude-opus-5-5 (run 4, final code)
+
+- Endpoint: `http://localhost:5678/webhook/brightpan-chat` | today=2026-10-18 | questions: 40
+- Results file: `results-claude.csv`
+- Correct (policy + lookups): 21/25 (84.0%)
+- Correct refusals (auto, pending manual review): 9/10 (90.0%)
+- Correct escalations: 5/5 (100.0%)
+- Request errors: 1/40
+- Latency median: 8.72 s | p90 (nearest-rank): 12.20 s
+- Manual review: pending
+
+## Run 20261018T150440Z — gpt-5.5 (run 3, final code)
+
+- Endpoint: `http://localhost:5678/webhook/brightpan-chat-openai` | today=2026-10-18 | questions: 40
+- Results file: `results-openai.csv`
+- Correct (policy + lookups): 24/25 (96.0%)
+- Correct refusals (auto, pending manual review): 9/10 (90.0%)
+- Correct escalations: 5/5 (100.0%)
+- Request errors: 0/40
+- Latency median: 11.05 s | p90 (nearest-rank): 14.71 s
+- Manual review: pending
+
+## Final reviewed results (manual review by Shams, 2026-10-18)
+
+Every row of both final runs was reviewed by hand (`eval/answer-review.xlsx`); the manual verdict is final.
+`eval/results.csv` is the GPT-5.5 run, the better of the two, as the spec asks.
+
+| | Claude Opus 5.5 (run 4, final code) | GPT-5.5 (run 3, final code) |
+| --- | --- | --- |
+| Answered correctly (policy + order lookups) | 24/25 (96%) | 25/25 (100%) |
+| Correct refusals | 10/10 (100%) | 10/10 (100%) |
+| Correct escalations | 5/5 | 5/5 |
+| Median reply (excl. request errors) | 8.72 s | 11.05 s |
+| p90 reply (nearest-rank) | 12.20 s | 14.71 s |
+| Failed rows | Q25 | none |
+| Reviewer overrode the automatic grade | Q11 (pass), Q13 (pass), Q21 (pass), Q34 (pass) | Q09 (pass), Q34 (pass) |
+
+- Claude Q25 failed on a DNS error between n8n and its services; the agent replied with the error-branch apology.
+  The order-lookup reservation step was not retried at the time. It now retries safely (idempotent `begin_lookup`
+  with a per-attempt token); Q25's question was answered correctly in a live check afterwards (not part of this run).
+- Claude Q11 and Q13 verdicts were given in chat; their cells were left empty in the review sheet.

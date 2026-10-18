@@ -10,7 +10,10 @@ const LIMITS = {
   email: { max: 5, strict: 2, seconds: 60 * 60, hard: true },
   global: { max: 200, strict: 200, seconds: 60 * 60, hard: false },
 };
-const attempt = { keys: [], limits: [], windows_s: [], hard: [], strict_limits: [] };
+// A unique ticket per lookup: if the reservation call is retried after a network error,
+// begin_lookup recognises the ticket and doesn't count the attempt twice.
+const token = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+const attempt = { keys: [], limits: [], windows_s: [], hard: [], strict_limits: [], token };
 const add = (key, lim) => {
   attempt.keys.push(key);
   attempt.limits.push(lim.max);

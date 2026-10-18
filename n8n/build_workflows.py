@@ -160,9 +160,9 @@ LOOKUP_FIELDS = ("name email processedAt cancelledAt displayFinancialStatus disp
 def tool_lookup():
     parse = code("Parse input", js("order_parse"), [220, 0])
     keys = code("Attempt keys", js("lookup_keys"), [440, 0])
-    # Not retried: a retry after a committed insert would reserve a second attempt.
+    # Safe to retry: the attempt token makes begin_lookup idempotent (a retry returns the same reservation).
     reserve = http("Reserve attempt", [660, 0], "__SUPABASE_URL__/rest/v1/rpc/begin_lookup",
-                   "={{ JSON.stringify($json.attempt) }}", retry=False, auth=supabase_auth(), credentials=SUPABASE_CRED)
+                   "={{ JSON.stringify($json.attempt) }}", retry=True, auth=supabase_auth(), credentials=SUPABASE_CRED)
     token, find = shopify_nodes(880, LOOKUP_FIELDS)
     result = code("Check email and format", js("lookup_result"), [1320, 0])
     finish = http("Record attempt", [1540, 0], "__SUPABASE_URL__/rest/v1/rpc/finish_lookup",

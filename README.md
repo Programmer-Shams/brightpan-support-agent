@@ -67,7 +67,18 @@ Each of the 40 questions in `eval/testset.csv` runs as a fresh session with the 
 
 Results go to a CSV with a `manual_verdict` column for human review, and each run's summary is appended to `eval/results-log.md`. Unit tests: `python3 -m unittest eval/test_run_eval.py` and `node --test n8n/js/test.mjs`.
 
-Measured results are recorded in [`eval/results-log.md`](eval/results-log.md).
+### Results
+
+Both models answered the same 40 questions on the final code, and every answer was reviewed by hand:
+
+| | GPT-5.5 | Claude Opus 5.5 |
+| --- | --- | --- |
+| Answered correctly (policy + order lookups) | 25/25 | 24/25 |
+| Correctly declined questions the help center doesn't cover | 10/10 | 10/10 |
+| Escalations routed to a person | 5/5 | 5/5 |
+| Median reply | 11.05 s | 8.72 s |
+
+Claude's one miss (Q25) was a network error during the order lookup, answered with the error-branch apology. `eval/results.csv` holds the GPT-5.5 run; every run, including earlier and invalid ones, is in [`eval/results-log.md`](eval/results-log.md), and the reviewed sheet is `eval/answer-review.xlsx`.
 
 ## Security notes
 

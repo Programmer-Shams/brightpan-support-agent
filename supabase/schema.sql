@@ -77,17 +77,22 @@ create table if not exists public.lookup_attempts (
   failed  boolean                             -- null while in flight, true = no match, false = matched
 );
 create index if not exists lookup_attempts_key_at_idx on public.lookup_attempts (key, at);
+-- One ticket per lookup, so a retried reservation returns the first one instead of counting twice.
+alter table public.lookup_attempts add column if not exists token text;
+create index if not exists lookup_attempts_token_idx on public.lookup_attempts (token);
 alter table public.lookup_attempts enable row level security;
 
 -- Atomically reserve one attempt per key. Keys are locked in sorted order for the rest of the
 -- transaction, so concurrent requests can't both pass the check. Failed and in-flight attempts count;
 -- matched attempts don't. Soft keys (the global failure counter) never block; when one is over its
 -- limit, hard keys switch to their stricter limits (under_attack = true). A hard key at its limit
--- returns locked = true and reserves nothing.
+-- returns locked = true and reserves nothing. `token` makes the call idempotent: a retry with the same
+-- token returns the attempts already reserved, so n8n can safely retry this step after a network error.
 drop function if exists public.begin_lookup(text[], int[], int[]);
 drop function if exists public.begin_lookup(text[], int[], int[], boolean[]);
+drop function if exists public.begin_lookup(text[], int[], int[], boolean[], int[]);
 create or replace function public.begin_lookup(
-  keys text[], limits int[], windows_s int[], hard boolean[], strict_limits int[]
+  keys text[], limits int[], windows_s int[], hard boolean[], strict_limits int[], token text
 )
 returns jsonb
 language plpgsql
@@ -102,6 +107,13 @@ declare
   ids bigint[] := '{}';
   new_id bigint;
 begin
+  perform pg_advisory_xact_lock(hashtextextended('token:' || coalesce(token, ''), 0));
+  if token is not null then
+    select coalesce(array_agg(id order by id), '{}') into ids from public.lookup_attempts a where a.token = begin_lookup.token;
+    if array_length(ids, 1) > 0 then
+      return jsonb_build_object('locked', false, 'under_attack', false, 'attempt_ids', to_jsonb(ids), 'replayed', true);
+    end if;
+  end if;
   for k in select x from unnest(keys) x order by x loop
     perform pg_advisory_xact_lock(hashtextextended(k, 0));
   end loop;
@@ -119,7 +131,7 @@ begin
     end if;
   end loop;
   for i in 1 .. coalesce(array_length(keys, 1), 0) loop
-    insert into public.lookup_attempts (key) values (keys[i]) returning id into new_id;
+    insert into public.lookup_attempts (key, token) values (keys[i], begin_lookup.token) returning id into new_id;
     ids := ids || new_id;
   end loop;
   delete from public.lookup_attempts where at < now() - interval '1 day';
@@ -135,7 +147,7 @@ as $$
   update public.lookup_attempts set failed = not matched where id = any(attempt_ids);
 $$;
 
-revoke execute on function public.begin_lookup(text[], int[], int[], boolean[], int[]) from public, anon, authenticated;
+revoke execute on function public.begin_lookup(text[], int[], int[], boolean[], int[], text) from public, anon, authenticated;
 revoke execute on function public.finish_lookup(bigint[], boolean) from public, anon, authenticated;
-grant execute on function public.begin_lookup(text[], int[], int[], boolean[], int[]) to service_role;
+grant execute on function public.begin_lookup(text[], int[], int[], boolean[], int[], text) to service_role;
 grant execute on function public.finish_lookup(bigint[], boolean) to service_role;
