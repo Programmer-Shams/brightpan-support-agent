@@ -28,12 +28,53 @@
       }
     },
     {
+      "id": "87b4120f-4a35-546e-bfc6-eb5751b1ae0a",
+      "name": "Attempt keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Keys and limits for order-lookup attempt limiting (enforced atomically by public.begin_lookup in Supabase).\n// Failed guesses are capped per conversation, per order number, per email and globally.\nconst p = $input.first().json;\nconst LIMITS = { session: [3, 15 * 60], order: [5, 60 * 60], email: [5, 60 * 60], global: [200, 60 * 60] };\nconst keys = [];\nconst limits = [];\nconst windows_s = [];\nconst add = (key, [max, seconds]) => { keys.push(key); limits.push(max); windows_s.push(seconds); };\nif (p.order_number && p.email) {\n  if (p.session_id) add('s:' + p.session_id, LIMITS.session);\n  add('o:' + p.order_number, LIMITS.order);\n  add('e:' + p.email, LIMITS.email);\n  add('g', LIMITS.global);\n}\nreturn [{ json: { attempt: { keys, limits, windows_s } } }];"
+      }
+    },
+    {
+      "id": "51cca29b-be49-56ca-839f-f743869822a1",
+      "name": "Reserve attempt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "__SUPABASE_URL__/rest/v1/rpc/begin_lookup",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.attempt) }}",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "__CRED_SUPABASE__",
+          "name": "Brightpan Supabase"
+        }
+      }
+    },
+    {
       "id": "f9f8b7b1-d35f-5b09-b3b5-66593ba9fc6a",
       "name": "Shopify token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        440,
+        880,
         0
       ],
       "parameters": {
@@ -71,7 +112,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
+        1100,
         0
       ],
       "parameters": {
@@ -103,11 +144,55 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
+        1320,
         0
       ],
       "parameters": {
-        "jsCode": "// lookup_order result. Order details are returned ONLY when the order number AND email match;\n// an unknown order and a wrong email get the identical NO_MATCH reply (no enumeration).\nconst { order_number, email, session_id } = $('Parse input').first().json;\n\n// Attempt limiting: the order number + email pair is the only proof of ownership, so cap failed guesses\n// per conversation and per order number (the latter also covers someone who keeps opening new conversations).\nconst LIMITS = { session: { max: 3, windowMs: 15 * 60 * 1000 }, order: { max: 5, windowMs: 60 * 60 * 1000 } };\nconst store = $getWorkflowStaticData('global');\nstore.failures = store.failures || {};\nconst now = Date.now();\nfor (const k of Object.keys(store.failures)) {\n  store.failures[k] = store.failures[k].filter(t => now - t < LIMITS.order.windowMs);\n  if (!store.failures[k].length) delete store.failures[k];\n}\nconst keys = [\n  session_id ? ['s:' + session_id, LIMITS.session] : null,\n  order_number ? ['o:' + order_number, LIMITS.order] : null,\n].filter(Boolean);\nconst recent = ([key, lim]) => (store.failures[key] || []).filter(t => now - t < lim.windowMs).length;\nif (keys.some(k => recent(k) >= k[1].max)) {\n  return [{ json: {\n    response: 'TOO_MANY_ATTEMPTS: Too many order lookups did not match. Do not look up orders again in this ' +\n      'conversation and do not share any order details. Offer to connect the customer with the support team.',\n    result: 'locked', order: null,\n  } }];\n}\nconst recordFailure = () => { for (const [key] of keys) (store.failures[key] = store.failures[key] || []).push(now); };\n\nif (!order_number || !email) {\n  return [{ json: {\n    response: 'MISSING_INPUT: Ask the customer for both the order number and the email used at checkout.',\n    result: 'missing_input', order: null,\n  } }];\n}\nconst res = $input.first().json;\nif (res.errors) throw new Error('Shopify error: ' + JSON.stringify(res.errors).slice(0, 300));\nconst o = ((res.data && res.data.orders && res.data.orders.nodes) || []).find(n => n.name === '#' + order_number);\nif (!o || String(o.email || '').toLowerCase() !== email) {\n  recordFailure();\n  return [{ json: {\n    response: 'NO_MATCH: No order matches that order number and email address. ' +\n      'Do not share any order details. Ask the customer to double-check both.',\n    result: 'no_match', order: null,\n  } }];\n}\n\nconst attr = Object.fromEntries((o.customAttributes || []).map(a => [a.key, a.value]));\nconst money = m => `$${Number(m.amount).toFixed(2)}`;\nconst order = {\n  number: o.name,\n  placed: o.processedAt.slice(0, 10),\n  status: attr.fulfillment_status || String(o.displayFulfillmentStatus).toLowerCase(),\n  cancelled: Boolean(o.cancelledAt),\n  payment: o.displayFinancialStatus,\n  ship_to: attr.ship_to || null,\n  carrier: attr.carrier || null,\n  tracking: attr.tracking_number || null,\n  shipped: attr.shipped_date || null,\n  delivered: attr.delivered_date || null,\n  shipping: money(o.totalShippingPriceSet.shopMoney),\n  total: money(o.totalPriceSet.shopMoney),\n  currency: o.totalPriceSet.shopMoney.currencyCode,\n  note: attr.note || null,\n  items: o.lineItems.nodes.map(li => {\n    const props = Object.fromEntries((li.customAttributes || []).map(a => [a.key, a.value]));\n    return {\n      qty: li.quantity,\n      title: li.title,\n      price: money(li.originalUnitPriceSet.shopMoney),\n      status: props.status || null,\n      final_sale: props.final_sale === 'true',\n    };\n  }),\n};\n\nconst lines = [\n  `MATCH: Order ${order.number} (email verified)`,\n  `Placed: ${order.placed}`,\n  `Status: ${order.status}${order.cancelled ? ' (order cancelled)' : ''}`,\n  `Payment: ${order.payment}`,\n  `Ship to: ${order.ship_to || 'unknown'}`,\n  `Carrier: ${order.carrier || 'not assigned yet'}`,\n  `Tracking number: ${order.tracking || 'none yet'}`,\n  `Shipped: ${order.shipped || 'not shipped yet'}`,\n  `Delivered: ${order.delivered || 'not delivered yet'}`,\n  `Shipping charged: ${order.shipping} ${order.currency}`,\n  `Order total: ${order.total} ${order.currency}`,\n  'Items:',\n  ...order.items.map(i => `- ${i.qty} x ${i.title} (${i.price} ${order.currency})` +\n    (i.status ? ` — item status: ${i.status}` : '') + (i.final_sale ? ' — final sale' : '')),\n];\nif (order.note) lines.push(`Note: ${order.note}`);\nreturn [{ json: { response: lines.join('\\n'), result: 'match', order } }];"
+        "jsCode": "// lookup_order result. Order details are returned ONLY when the order number AND email match;\n// an unknown order and a wrong email get the identical NO_MATCH reply (no enumeration).\nconst { order_number, email } = $('Parse input').first().json;\n\n// Attempt limit (see lookup_keys.js): when any key is at its cap, no order data is returned, even for a\n// correct email, so repeated guessing can't succeed. Locks expire after their window.\nif ($('Reserve attempt').first().json.locked) {\n  return [{ json: {\n    response: 'TOO_MANY_ATTEMPTS: Too many order lookups did not match. Do not look up orders again in this ' +\n      'conversation and do not share any order details. Offer to connect the customer with the support team.',\n    result: 'locked', order: null,\n  } }];\n}\n\nif (!order_number || !email) {\n  return [{ json: {\n    response: 'MISSING_INPUT: Ask the customer for both the order number and the email used at checkout.',\n    result: 'missing_input', order: null,\n  } }];\n}\nconst res = $input.first().json;\nif (res.errors) throw new Error('Shopify error: ' + JSON.stringify(res.errors).slice(0, 300));\nconst o = ((res.data && res.data.orders && res.data.orders.nodes) || []).find(n => n.name === '#' + order_number);\nif (!o || String(o.email || '').toLowerCase() !== email) {\n  return [{ json: {\n    response: 'NO_MATCH: No order matches that order number and email address. ' +\n      'Do not share any order details. Ask the customer to double-check both.',\n    result: 'no_match', order: null,\n  } }];\n}\n\nconst attr = Object.fromEntries((o.customAttributes || []).map(a => [a.key, a.value]));\nconst money = m => `$${Number(m.amount).toFixed(2)}`;\nconst order = {\n  number: o.name,\n  placed: o.processedAt.slice(0, 10),\n  status: attr.fulfillment_status || String(o.displayFulfillmentStatus).toLowerCase(),\n  cancelled: Boolean(o.cancelledAt),\n  payment: o.displayFinancialStatus,\n  ship_to: attr.ship_to || null,\n  carrier: attr.carrier || null,\n  tracking: attr.tracking_number || null,\n  shipped: attr.shipped_date || null,\n  delivered: attr.delivered_date || null,\n  shipping: money(o.totalShippingPriceSet.shopMoney),\n  total: money(o.totalPriceSet.shopMoney),\n  currency: o.totalPriceSet.shopMoney.currencyCode,\n  note: attr.note || null,\n  items: o.lineItems.nodes.map(li => {\n    const props = Object.fromEntries((li.customAttributes || []).map(a => [a.key, a.value]));\n    return {\n      qty: li.quantity,\n      title: li.title,\n      price: money(li.originalUnitPriceSet.shopMoney),\n      status: props.status || null,\n      final_sale: props.final_sale === 'true',\n    };\n  }),\n};\n\nconst lines = [\n  `MATCH: Order ${order.number} (email verified)`,\n  `Placed: ${order.placed}`,\n  `Status: ${order.status}${order.cancelled ? ' (order cancelled)' : ''}`,\n  `Payment: ${order.payment}`,\n  `Ship to: ${order.ship_to || 'unknown'}`,\n  `Carrier: ${order.carrier || 'not assigned yet'}`,\n  `Tracking number: ${order.tracking || 'none yet'}`,\n  `Shipped: ${order.shipped || 'not shipped yet'}`,\n  `Delivered: ${order.delivered || 'not delivered yet'}`,\n  `Shipping charged: ${order.shipping} ${order.currency}`,\n  `Order total: ${order.total} ${order.currency}`,\n  'Items:',\n  ...order.items.map(i => `- ${i.qty} x ${i.title} (${i.price} ${order.currency})` +\n    (i.status ? ` — item status: ${i.status}` : '') + (i.final_sale ? ' — final sale' : '')),\n];\nif (order.note) lines.push(`Note: ${order.note}`);\nreturn [{ json: { response: lines.join('\\n'), result: 'match', order } }];"
+      }
+    },
+    {
+      "id": "e144552e-9c20-5380-9681-be317ecafc27",
+      "name": "Record attempt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "__SUPABASE_URL__/rest/v1/rpc/finish_lookup",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ attempt_ids: $('Reserve attempt').first().json.attempt_ids, matched: $json.result !== 'no_match' }) }}",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "__CRED_SUPABASE__",
+          "name": "Brightpan Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "491bf3b7-ef61-5856-b57a-8d9ba9df37af",
+      "name": "Return result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: $('Check email and format').first().json }];"
       }
     }
   ],
@@ -124,6 +209,28 @@
       ]
     },
     "Parse input": {
+      "main": [
+        [
+          {
+            "node": "Attempt keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attempt keys": {
+      "main": [
+        [
+          {
+            "node": "Reserve attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserve attempt": {
       "main": [
         [
           {
@@ -150,6 +257,28 @@
         [
           {
             "node": "Check email and format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check email and format": {
+      "main": [
+        [
+          {
+            "node": "Record attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record attempt": {
+      "main": [
+        [
+          {
+            "node": "Return result",
             "type": "main",
             "index": 0
           }

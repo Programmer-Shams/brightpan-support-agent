@@ -1,30 +1,16 @@
 // lookup_order result. Order details are returned ONLY when the order number AND email match;
 // an unknown order and a wrong email get the identical NO_MATCH reply (no enumeration).
-const { order_number, email, session_id } = $('Parse input').first().json;
+const { order_number, email } = $('Parse input').first().json;
 
-// Attempt limiting: the order number + email pair is the only proof of ownership, so cap failed guesses
-// per conversation and per order number (the latter also covers someone who keeps opening new conversations).
-const LIMITS = { session: { max: 3, windowMs: 15 * 60 * 1000 }, order: { max: 5, windowMs: 60 * 60 * 1000 } };
-const store = $getWorkflowStaticData('global');
-store.failures = store.failures || {};
-const now = Date.now();
-for (const k of Object.keys(store.failures)) {
-  store.failures[k] = store.failures[k].filter(t => now - t < LIMITS.order.windowMs);
-  if (!store.failures[k].length) delete store.failures[k];
-}
-const keys = [
-  session_id ? ['s:' + session_id, LIMITS.session] : null,
-  order_number ? ['o:' + order_number, LIMITS.order] : null,
-].filter(Boolean);
-const recent = ([key, lim]) => (store.failures[key] || []).filter(t => now - t < lim.windowMs).length;
-if (keys.some(k => recent(k) >= k[1].max)) {
+// Attempt limit (see lookup_keys.js): when any key is at its cap, no order data is returned, even for a
+// correct email, so repeated guessing can't succeed. Locks expire after their window.
+if ($('Reserve attempt').first().json.locked) {
   return [{ json: {
     response: 'TOO_MANY_ATTEMPTS: Too many order lookups did not match. Do not look up orders again in this ' +
       'conversation and do not share any order details. Offer to connect the customer with the support team.',
     result: 'locked', order: null,
   } }];
 }
-const recordFailure = () => { for (const [key] of keys) (store.failures[key] = store.failures[key] || []).push(now); };
 
 if (!order_number || !email) {
   return [{ json: {
@@ -36,7 +22,6 @@ const res = $input.first().json;
 if (res.errors) throw new Error('Shopify error: ' + JSON.stringify(res.errors).slice(0, 300));
 const o = ((res.data && res.data.orders && res.data.orders.nodes) || []).find(n => n.name === '#' + order_number);
 if (!o || String(o.email || '').toLowerCase() !== email) {
-  recordFailure();
   return [{ json: {
     response: 'NO_MATCH: No order matches that order number and email address. ' +
       'Do not share any order details. Ask the customer to double-check both.',

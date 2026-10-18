@@ -12,15 +12,33 @@ const MAX_MESSAGE = 4000;
 
 export const maxDuration = 120;
 
-// Simple in-memory rate limit per client address (single-process demo server; use a shared store in production).
-const RATE = { max: 30, windowMs: 5 * 60 * 1000 };
+// In-memory rate limit (single-process demo server; use a shared store such as Redis in production).
+// X-Forwarded-For is client-controlled unless a proxy you run sets it, so it is only used when
+// TRUSTED_PROXY_HOPS says how many proxies sit in front of the app; then the client is the address
+// those proxies appended. Without it (local demo) every request shares one bucket.
+const RATE = { max: 30, windowMs: 5 * 60 * 1000, maxClients: 10_000 };
+const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
 const hits = new Map<string, number[]>();
+
+function clientKey(request: Request): string {
+  if (TRUSTED_PROXY_HOPS > 0) {
+    const chain = (request.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const client = chain[chain.length - TRUSTED_PROXY_HOPS];
+    if (client) return client;
+  }
+  return "local";
+}
+
 function rateLimited(request: Request): boolean {
-  const client = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
   const now = Date.now();
-  const recent = (hits.get(client) ?? []).filter((t) => now - t < RATE.windowMs);
+  if (hits.size > RATE.maxClients) {
+    for (const [key, times] of hits) if (!times.some((t) => now - t < RATE.windowMs)) hits.delete(key);
+    if (hits.size > RATE.maxClients) hits.clear();
+  }
+  const key = clientKey(request);
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < RATE.windowMs);
   recent.push(now);
-  hits.set(client, recent);
+  hits.set(key, recent);
   return recent.length > RATE.max;
 }
 

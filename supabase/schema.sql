@@ -67,3 +67,61 @@ alter table public.handoffs add column if not exists verified boolean not null d
 alter table public.kb_chunks     enable row level security;
 alter table public.conversations enable row level security;
 alter table public.handoffs      enable row level security;
+
+-- Order-lookup attempt limiting (lookup_order tool). The order number + email pair is the only proof
+-- of ownership, so failed guesses are capped per conversation, order number, email and globally.
+create table if not exists public.lookup_attempts (
+  id      bigserial primary key,
+  key     text not null,                      -- 's:<session>', 'o:<order>', 'e:<email>' or 'g'
+  at      timestamptz not null default now(),
+  failed  boolean                             -- null while in flight, true = no match, false = matched
+);
+create index if not exists lookup_attempts_key_at_idx on public.lookup_attempts (key, at);
+alter table public.lookup_attempts enable row level security;
+
+-- Atomically reserve one attempt per key. Keys are locked in sorted order for the rest of the
+-- transaction, so concurrent requests can't both pass the check. Failed and in-flight attempts count;
+-- matched attempts don't. Returns locked = true (reserving nothing) if any key is at its limit.
+create or replace function public.begin_lookup(keys text[], limits int[], windows_s int[])
+returns jsonb
+language plpgsql
+set search_path = public
+as $$
+declare
+  i int;
+  n int;
+  k text;
+  ids bigint[] := '{}';
+  new_id bigint;
+begin
+  for k in select x from unnest(keys) x order by x loop
+    perform pg_advisory_xact_lock(hashtextextended(k, 0));
+  end loop;
+  for i in 1 .. coalesce(array_length(keys, 1), 0) loop
+    select count(*) into n from public.lookup_attempts
+     where key = keys[i] and at > now() - make_interval(secs => windows_s[i]) and (failed is null or failed);
+    if n >= limits[i] then
+      return jsonb_build_object('locked', true, 'attempt_ids', '[]'::jsonb);
+    end if;
+  end loop;
+  for i in 1 .. coalesce(array_length(keys, 1), 0) loop
+    insert into public.lookup_attempts (key) values (keys[i]) returning id into new_id;
+    ids := ids || new_id;
+  end loop;
+  delete from public.lookup_attempts where at < now() - interval '1 day';
+  return jsonb_build_object('locked', false, 'attempt_ids', to_jsonb(ids));
+end;
+$$;
+
+create or replace function public.finish_lookup(attempt_ids bigint[], matched boolean)
+returns void
+language sql
+set search_path = public
+as $$
+  update public.lookup_attempts set failed = not matched where id = any(attempt_ids);
+$$;
+
+revoke execute on function public.begin_lookup(text[], int[], int[]) from public, anon, authenticated;
+revoke execute on function public.finish_lookup(bigint[], boolean) from public, anon, authenticated;
+grant execute on function public.begin_lookup(text[], int[], int[]) to service_role;
+grant execute on function public.finish_lookup(bigint[], boolean) to service_role;

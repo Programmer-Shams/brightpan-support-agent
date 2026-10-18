@@ -159,11 +159,21 @@ LOOKUP_FIELDS = ("name email processedAt cancelledAt displayFinancialStatus disp
 
 def tool_lookup():
     parse = code("Parse input", js("order_parse"), [220, 0])
-    token, find = shopify_nodes(440, LOOKUP_FIELDS)
-    result = code("Check email and format", js("lookup_result"), [880, 0])
-    return workflow("Brightpan tool: lookup_order", [trigger(), parse, token, find, result],
-                    chain("When called by agent", "Parse input", "Shopify token", "Find order",
-                          "Check email and format"), **NO_EXECUTION_DATA)
+    keys = code("Attempt keys", js("lookup_keys"), [440, 0])
+    # Not retried: a retry after a committed insert would reserve a second attempt.
+    reserve = http("Reserve attempt", [660, 0], "__SUPABASE_URL__/rest/v1/rpc/begin_lookup",
+                   "={{ JSON.stringify($json.attempt) }}", retry=False, auth=supabase_auth(), credentials=SUPABASE_CRED)
+    token, find = shopify_nodes(880, LOOKUP_FIELDS)
+    result = code("Check email and format", js("lookup_result"), [1320, 0])
+    finish = http("Record attempt", [1540, 0], "__SUPABASE_URL__/rest/v1/rpc/finish_lookup",
+                  "={{ JSON.stringify({ attempt_ids: $('Reserve attempt').first().json.attempt_ids, "
+                  "matched: $json.result !== 'no_match' }) }}",
+                  retry=True, auth=supabase_auth(), credentials=SUPABASE_CRED)
+    done = code("Return result", "return [{ json: $('Check email and format').first().json }];", [1760, 0])
+    return workflow("Brightpan tool: lookup_order", [trigger(), parse, keys, reserve, token, find, result, finish, done],
+                    chain("When called by agent", "Parse input", "Attempt keys", "Reserve attempt", "Shopify token",
+                          "Find order", "Check email and format", "Record attempt", "Return result"),
+                    **NO_EXECUTION_DATA)
 
 
 # ---------- tool: escalate_to_human ----------

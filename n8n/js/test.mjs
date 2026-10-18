@@ -14,7 +14,7 @@ function run(name, { input = {}, inputs, nodes = {} } = {}) {
     if (!(node in nodes)) throw new Error(`Referenced node is unexecuted: ${node}`);
     return { first: () => ({ json: nodes[node] }) };
   };
-  return new Function("$", "$input", "$getWorkflowStaticData", load(name))($, $input, () => (run.store ??= {}));
+  return new Function("$", "$input", load(name))($, $input);
 }
 
 const PREPARE = { session_id: "s1", message: "hi", today: "2026-10-18", started_at: Date.now() };
@@ -103,8 +103,11 @@ const SHOPIFY_ORDER = {
   lineItems: { nodes: [{ title: "Pro 3-quart Saucepan", quantity: 1, customAttributes: [],
     originalUnitPriceSet: { shopMoney: { amount: "119.0", currencyCode: "USD" } } }] },
 };
-const lookup = (order_number, email, nodes = [SHOPIFY_ORDER]) => (run.store = {}) &&
-  run("lookup_result", { input: { data: { orders: { nodes } } }, nodes: { "Parse input": { order_number, email } } })[0].json;
+const lookup = (order_number, email, nodes = [SHOPIFY_ORDER]) =>
+  run("lookup_result", {
+    input: { data: { orders: { nodes } } },
+    nodes: { "Parse input": { order_number, email }, "Reserve attempt": { locked: false, attempt_ids: [] } },
+  })[0].json;
 
 test("lookup_result: details only when number AND email match; identical NO_MATCH otherwise", () => {
   const ok = lookup("1002", "maria.lopez@example.com");
@@ -145,17 +148,19 @@ test("escalate_verify: verified flag; customer text stays plain in Slack", () =>
   assert.equal(verify({ reason: "free money" }).row.reason, "other");
 });
 
-test("lookup_result: failed lookups are capped per conversation and per order", () => {
-  run.store = {};
-  const attempt = (sid, num, email) => run("lookup_result", {
+test("lookup_keys: four limit keys only when both inputs are present", () => {
+  const k = run("lookup_keys", { input: { order_number: "1002", email: "a@b.co", session_id: "s1" } })[0].json.attempt;
+  assert.deepEqual(k.keys, ["s:s1", "o:1002", "e:a@b.co", "g"]);
+  assert.equal(k.limits.length, 4);
+  assert.deepEqual(run("lookup_keys", { input: { order_number: "1002", email: "" } })[0].json.attempt.keys, []);
+});
+
+test("lookup_result: a locked attempt returns no order data, even with the right email", () => {
+  const r = run("lookup_result", {
     input: { data: { orders: { nodes: [SHOPIFY_ORDER] } } },
-    nodes: { "Parse input": { order_number: num, email, session_id: sid } },
-  })[0].json.result;
-  assert.deepEqual([1, 2, 3].map(() => attempt("a", "1002", "guess@example.com")), ["no_match", "no_match", "no_match"]);
-  assert.equal(attempt("a", "1002", "maria.lopez@example.com"), "locked"); // session locked, even with the right email
-  assert.equal(attempt("b", "1002", "guess2@example.com"), "no_match");     // 4th failure for order 1002
-  assert.equal(attempt("c", "1002", "guess3@example.com"), "no_match");     // 5th
-  assert.equal(attempt("d", "1002", "maria.lopez@example.com"), "locked");  // order 1002 locked across sessions
-  run.store = {};
-  assert.equal(attempt("e", "1002", "maria.lopez@example.com"), "match");
+    nodes: { "Parse input": { order_number: "1002", email: "maria.lopez@example.com" }, "Reserve attempt": { locked: true } },
+  })[0].json;
+  assert.equal(r.result, "locked");
+  assert.equal(r.order, null);
+  assert.doesNotMatch(r.response, /1ZBP|UPS/);
 });
