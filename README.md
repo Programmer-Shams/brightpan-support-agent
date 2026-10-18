@@ -6,6 +6,10 @@ Brightpan Kitchen Supply is a fictional store. All customers, orders and emails 
 
 ## How it works
 
+![Architecture: chat app, n8n AI agent, three tools wired to OpenAI, Supabase, Shopify and Slack](docs/architecture.png)
+
+The diagram's source is `docs/architecture.html` (open it in a browser; export with any screenshot tool at 2x).
+
 ```
 Chat app (Next.js)  ── POST /api/chat ──►  Next.js server route (checks origin, signs session id)
                                               │  X-Brightpan-Key
