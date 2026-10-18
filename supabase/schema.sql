@@ -81,8 +81,10 @@ alter table public.lookup_attempts enable row level security;
 
 -- Atomically reserve one attempt per key. Keys are locked in sorted order for the rest of the
 -- transaction, so concurrent requests can't both pass the check. Failed and in-flight attempts count;
--- matched attempts don't. Returns locked = true (reserving nothing) if any key is at its limit.
-create or replace function public.begin_lookup(keys text[], limits int[], windows_s int[])
+-- matched attempts don't. A hard key at its limit returns locked = true (reserving nothing); a soft key
+-- (e.g. the global counter) is only reported in over_soft_limit and never blocks anyone.
+drop function if exists public.begin_lookup(text[], int[], int[]);
+create or replace function public.begin_lookup(keys text[], limits int[], windows_s int[], hard boolean[])
 returns jsonb
 language plpgsql
 set search_path = public
@@ -91,6 +93,7 @@ declare
   i int;
   n int;
   k text;
+  soft_over text[] := '{}';
   ids bigint[] := '{}';
   new_id bigint;
 begin
@@ -101,7 +104,10 @@ begin
     select count(*) into n from public.lookup_attempts
      where key = keys[i] and at > now() - make_interval(secs => windows_s[i]) and (failed is null or failed);
     if n >= limits[i] then
-      return jsonb_build_object('locked', true, 'attempt_ids', '[]'::jsonb);
+      if hard[i] then
+        return jsonb_build_object('locked', true, 'attempt_ids', '[]'::jsonb, 'over_soft_limit', '[]'::jsonb);
+      end if;
+      soft_over := soft_over || keys[i];
     end if;
   end loop;
   for i in 1 .. coalesce(array_length(keys, 1), 0) loop
@@ -109,7 +115,7 @@ begin
     ids := ids || new_id;
   end loop;
   delete from public.lookup_attempts where at < now() - interval '1 day';
-  return jsonb_build_object('locked', false, 'attempt_ids', to_jsonb(ids));
+  return jsonb_build_object('locked', false, 'attempt_ids', to_jsonb(ids), 'over_soft_limit', to_jsonb(soft_over));
 end;
 $$;
 
@@ -121,7 +127,7 @@ as $$
   update public.lookup_attempts set failed = not matched where id = any(attempt_ids);
 $$;
 
-revoke execute on function public.begin_lookup(text[], int[], int[]) from public, anon, authenticated;
+revoke execute on function public.begin_lookup(text[], int[], int[], boolean[]) from public, anon, authenticated;
 revoke execute on function public.finish_lookup(bigint[], boolean) from public, anon, authenticated;
-grant execute on function public.begin_lookup(text[], int[], int[]) to service_role;
+grant execute on function public.begin_lookup(text[], int[], int[], boolean[]) to service_role;
 grant execute on function public.finish_lookup(bigint[], boolean) to service_role;
