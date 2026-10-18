@@ -81,10 +81,14 @@ alter table public.lookup_attempts enable row level security;
 
 -- Atomically reserve one attempt per key. Keys are locked in sorted order for the rest of the
 -- transaction, so concurrent requests can't both pass the check. Failed and in-flight attempts count;
--- matched attempts don't. A hard key at its limit returns locked = true (reserving nothing); a soft key
--- (e.g. the global counter) is only reported in over_soft_limit and never blocks anyone.
+-- matched attempts don't. Soft keys (the global failure counter) never block; when one is over its
+-- limit, hard keys switch to their stricter limits (under_attack = true). A hard key at its limit
+-- returns locked = true and reserves nothing.
 drop function if exists public.begin_lookup(text[], int[], int[]);
-create or replace function public.begin_lookup(keys text[], limits int[], windows_s int[], hard boolean[])
+drop function if exists public.begin_lookup(text[], int[], int[], boolean[]);
+create or replace function public.begin_lookup(
+  keys text[], limits int[], windows_s int[], hard boolean[], strict_limits int[]
+)
 returns jsonb
 language plpgsql
 set search_path = public
@@ -93,7 +97,8 @@ declare
   i int;
   n int;
   k text;
-  soft_over text[] := '{}';
+  counts int[] := '{}';
+  under_attack boolean := false;
   ids bigint[] := '{}';
   new_id bigint;
 begin
@@ -103,11 +108,14 @@ begin
   for i in 1 .. coalesce(array_length(keys, 1), 0) loop
     select count(*) into n from public.lookup_attempts
      where key = keys[i] and at > now() - make_interval(secs => windows_s[i]) and (failed is null or failed);
-    if n >= limits[i] then
-      if hard[i] then
-        return jsonb_build_object('locked', true, 'attempt_ids', '[]'::jsonb, 'over_soft_limit', '[]'::jsonb);
-      end if;
-      soft_over := soft_over || keys[i];
+    counts := counts || n;
+    if not hard[i] and n >= limits[i] then
+      under_attack := true;
+    end if;
+  end loop;
+  for i in 1 .. coalesce(array_length(keys, 1), 0) loop
+    if hard[i] and counts[i] >= (case when under_attack then strict_limits[i] else limits[i] end) then
+      return jsonb_build_object('locked', true, 'under_attack', under_attack, 'attempt_ids', '[]'::jsonb);
     end if;
   end loop;
   for i in 1 .. coalesce(array_length(keys, 1), 0) loop
@@ -115,7 +123,7 @@ begin
     ids := ids || new_id;
   end loop;
   delete from public.lookup_attempts where at < now() - interval '1 day';
-  return jsonb_build_object('locked', false, 'attempt_ids', to_jsonb(ids), 'over_soft_limit', to_jsonb(soft_over));
+  return jsonb_build_object('locked', false, 'under_attack', under_attack, 'attempt_ids', to_jsonb(ids));
 end;
 $$;
 
@@ -127,7 +135,7 @@ as $$
   update public.lookup_attempts set failed = not matched where id = any(attempt_ids);
 $$;
 
-revoke execute on function public.begin_lookup(text[], int[], int[], boolean[]) from public, anon, authenticated;
+revoke execute on function public.begin_lookup(text[], int[], int[], boolean[], int[]) from public, anon, authenticated;
 revoke execute on function public.finish_lookup(bigint[], boolean) from public, anon, authenticated;
-grant execute on function public.begin_lookup(text[], int[], int[], boolean[]) to service_role;
+grant execute on function public.begin_lookup(text[], int[], int[], boolean[], int[]) to service_role;
 grant execute on function public.finish_lookup(bigint[], boolean) to service_role;

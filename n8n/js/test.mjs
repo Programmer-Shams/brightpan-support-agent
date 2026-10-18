@@ -152,6 +152,7 @@ test("lookup_keys: four limit keys only when both inputs are present", () => {
   const k = run("lookup_keys", { input: { order_number: "1002", email: "a@b.co", session_id: "s1" } })[0].json.attempt;
   assert.deepEqual(k.keys, ["s:s1", "o:1002", "e:a@b.co", "g"]);
   assert.deepEqual(k.hard, [true, true, true, false]); // the global counter never locks anyone out
+  assert.deepEqual(k.strict_limits, [1, 2, 2, 200]); // stricter caps once global failures pass the threshold
   assert.deepEqual(run("lookup_keys", { input: { order_number: "1002", email: "" } })[0].json.attempt.keys, []);
 });
 
