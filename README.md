@@ -2,7 +2,7 @@
 
 An AI customer support agent for an online store ([case study](docs/case-study.md)). It answers product, shipping and policy questions only from the store's own help center (and names the article it used), looks up orders only when the order number and the email match, and hands refunds, damaged items, warranty claims and complaints to a person with a summary.
 
-Brightpan Kitchen Supply is a fictional store. All customers, orders and emails are demo data (`@example.com`).
+Brightpan Kitchen Supply is the store in this portfolio project. All customers, orders and emails are test data (`@example.com`).
 
 ## How it works
 
@@ -24,7 +24,7 @@ Chat app (Next.js)  ── POST /api/chat ──►  Next.js server route (check
 ```
 
 - **Help center:** `kb/help-center.md` is split into one chunk per `## [Axx]` article, embedded with OpenAI `text-embedding-3-small` and stored in a `kb_chunks` table with pgvector.
-- **Orders:** the 15 demo orders in `data/orders.json` live in a Shopify development store.
+- **Orders:** the 15 test orders in `data/orders.json` live in a Shopify development store.
 - **Agent rules:** `n8n/system_prompt.md` holds the nine rules from the spec: answer only from tools, cite the source, say "I don't have that" instead of guessing, never invent codes or prices, share orders only on a number + email match, always escalate refunds and damage reports, decline off-topic questions, and ignore instructions hidden in customer messages.
 - **Failures:** if the model or any tool fails, the customer gets "Sorry, something went wrong — I've passed this to our team", the error is logged, and a `system_error` hand-off is created.
 
@@ -33,7 +33,7 @@ Chat app (Next.js)  ── POST /api/chat ──►  Next.js server route (check
 | Path | What it is |
 | --- | --- |
 | `BUILD_SPEC.md` | The approved spec: rules, build steps, done criteria |
-| `kb/`, `data/` | Help center articles and demo orders (the source data) |
+| `kb/`, `data/` | Help center articles and test orders (the source data) |
 | `supabase/schema.sql` | Tables `kb_chunks`, `conversations`, `handoffs`; search function; row-level security |
 | `scripts/` | Python helpers: Supabase project setup, Shopify order loader, shared `.env`/HTTP helpers |
 | `ingest/ingest_kb.py` | Embeds the help center into Supabase and checks retrieval |
@@ -103,6 +103,6 @@ Claude's one miss (Q25) was a network error during the order lookup, answered wi
 - **Chat app.** The spec asked for a single HTML page; this is a Next.js + shadcn/ui app instead, at the owner's request.
 - **Grading is literal.** A correct answer worded differently from the test set (for example "wash by hand" for "hand wash") fails the automatic check. The manual verdict in the results CSV is final.
 - **Memory.** Conversation memory is kept in n8n's process memory (last 10 messages per session) and is lost when n8n restarts.
-- **Local only.** This is a local demo: there is no user login or production hosting. The chat rate limit lives in the Next.js process memory, so it resets on restart and isn't shared between servers.
+- **Local only.** This runs locally: there is no user login or production hosting. The chat rate limit lives in the Next.js process memory, so it resets on restart and isn't shared between servers.
 - **Lockout trade-off.** Because the order number and email are the only proof of ownership, an order or email that collects 5 failed guesses in an hour is locked for everyone, including its real owner, until the hour passes. The agent then offers to connect the customer to a person. Removing this trade-off needs a second factor, such as a one-time code emailed to the customer.
 - **Lookup limit and the eval.** Each eval run makes two deliberately failed lookups: order 1002 with a wrong email (Q31), and sam.reed@example.com with an unknown order (Q32). After five runs within an hour, those keys are locked, and the matching lookups (Q20, Q23) fail until the hour passes.

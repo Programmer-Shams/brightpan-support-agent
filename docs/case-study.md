@@ -1,6 +1,6 @@
 # Case study: an AI support agent that answers from the store's own docs
 
-**Project:** Brightpan support agent, a portfolio demo for a fictional cookware store
+**Project:** Brightpan support agent, a portfolio project for a cookware store
 **Built with:** n8n, Claude Opus 5.5 and GPT-5.5, Supabase (Postgres + pgvector), the Shopify Admin API, Slack, Next.js
 **Code:** [github.com/Programmer-Shams/brightpan-support-agent](https://github.com/Programmer-Shams/brightpan-support-agent)
 
@@ -68,7 +68,7 @@ Each question ran as a new conversation through the real system, with the date f
 | Median reply time | 11.1 s | 8.7 s |
 | Slowest 10% of replies took at least | 14.7 s | 12.2 s |
 
-The demo video uses GPT-5.5, the more accurate of the two. Claude's one miss came from a network error during an order lookup, not from a wrong answer: the agent gave its "something went wrong" apology instead of guessing. That run showed one step in the order lookup wasn't retried after network errors. I made it safe to retry, and the same question then answered correctly.
+The video uses GPT-5.5, the more accurate of the two. Claude's one miss came from a network error during an order lookup, not from a wrong answer: the agent gave its "something went wrong" apology instead of guessing. That run showed one step in the order lookup wasn't retried after network errors. I made it safe to retry, and the same question then answered correctly.
 
 ## What the testing caught along the way
 
@@ -85,7 +85,7 @@ Every test run, including the early and invalid ones, is recorded in the reposit
 
 ## Limits
 
-- It's a demo: a fictional store, 21 help articles, 15 orders, running on one computer. There is no customer login or production hosting.
+- It's a portfolio project: one store, 21 help articles, 15 orders, running on one computer. There is no customer login or production hosting.
 - The newest AI models don't allow the "temperature 0" setting the spec asked for, so wording can vary slightly from run to run.
 - The order check relies on the order number and email. Someone repeatedly guessing a customer's email can lock that customer's lookups for up to an hour (a person is offered instead). A production version would add a one-time code sent by email.
 - Shopify access was limited to orders, so tracking numbers and dates are stored as order attributes rather than as Shopify shipments.

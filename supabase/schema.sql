@@ -1,4 +1,4 @@
--- Brightpan demo schema. Idempotent: safe to re-run.
+-- Brightpan schema. Idempotent: safe to re-run.
 -- RLS is enabled with no policies, so only the service role (n8n, scripts) can read or write.
 
 create extension if not exists vector with schema extensions;

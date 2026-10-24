@@ -241,7 +241,7 @@ function EmptyState({ onPick, model }: { onPick: (q: string) => void; model: Mod
           ))}
         </ul>
         <p className="mt-6 text-xs text-muted-foreground">
-          Answering with {MODELS[model].label}. Orders and customers are fictional demo data.
+          Answering with {MODELS[model].label}. Orders and customers are test data.
         </p>
       </div>
     </div>

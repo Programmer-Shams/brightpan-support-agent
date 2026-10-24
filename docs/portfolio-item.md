@@ -11,6 +11,6 @@ Published on Upwork. Numbers come from `eval/results.csv` (GPT-5.5 run) and `eva
 **Skills:** n8n, AI Chatbot, AI Agent Development, Shopify, Supabase
 
 **Content:**
-1. Demo video (1 min 42 s, Claude Opus 5.5): three sourced policy answers, a verified order lookup, a "don't have that" refusal, an escalation arriving in Slack as ticket #45, then the results table. Typing and waiting time is cut, with an on-screen caption saying so.
+1. Video (1 min 42 s, Claude Opus 5.5): three sourced policy answers, a verified order lookup, a "don't have that" refusal, an escalation arriving in Slack as ticket #45, then the results table. Typing and waiting time is cut, with an on-screen caption saying so.
 2. Architecture diagram: `docs/architecture.png`.
 3. Text: problem, what was built, how it was tested, results for both models (a short version of `docs/case-study.md`).

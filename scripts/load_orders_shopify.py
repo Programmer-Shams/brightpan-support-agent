@@ -1,4 +1,4 @@
-"""Create the 15 demo orders from data/orders.json in the Shopify dev store (BUILD_SPEC step 3).
+"""Create the 15 test orders from data/orders.json in the Shopify dev store (BUILD_SPEC step 3).
 
 Scopes: read_orders, write_orders only. Native order fields carry what those scopes
 allow (name #10xx, email, date, line items, shipping, financial/fulfillment status,

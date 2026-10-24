@@ -1,6 +1,6 @@
 # Brightpan Kitchen Supply — Help Center
 
-Brightpan Kitchen Supply is a fictional online store created for a portfolio demo. It sells cookware, knives and small kitchen electrics, and ships from Ohio, USA.
+Brightpan Kitchen Supply is an online store. It sells cookware, knives and small kitchen electrics, and ships from Ohio, USA.
 
 Product lines: Everyday (nonstick), Classic (3-ply stainless steel), Pro (5-ply stainless steel), Cast Iron, Lite (aluminum), Edge knives, and electrics (Brightpan Kettle, Brightpan Hand Blender).
 

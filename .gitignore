@@ -13,3 +13,6 @@ n8n/.n8n-data/
 *.log
 .DS_Store
 n8n/.deploy-state.json
+
+# internal build spec (kept locally, not published)
+BUILD_SPEC*.md

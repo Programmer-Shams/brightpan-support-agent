@@ -12,10 +12,10 @@ const MAX_MESSAGE = 4000;
 
 export const maxDuration = 120;
 
-// In-memory rate limit (single-process demo server; use a shared store such as Redis in production).
+// In-memory rate limit (single-process server; use a shared store such as Redis in production).
 // X-Forwarded-For is client-controlled unless a proxy you run sets it, so it is only used when
 // TRUSTED_PROXY_HOPS says how many proxies sit in front of the app; then the client is the address
-// those proxies appended. Without it (local demo) every request shares one bucket.
+// those proxies appended. Without it (local run) every request shares one bucket.
 const RATE = { max: 30, windowMs: 5 * 60 * 1000, maxClients: 10_000 };
 const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
 const hits = new Map<string, number[]>();
